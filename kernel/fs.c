@@ -394,15 +394,53 @@ bmap(struct inode *ip, uint bn)
     }
     return addr;
   }
-  bn -= NDIRECT;
 
-  if(bn < NINDIRECT){
-    // Load indirect block, allocating if necessary.
+  if (bn < MAXFILE - NINDIRECT) {
+    bn -= NDIRECT;
+
     if((addr = ip->addrs[NDIRECT]) == 0){
       addr = balloc(ip->dev);
       if(addr == 0)
         return 0;
-      ip->addrs[NDIRECT] = addr;
+      ip->addrs[NINDIRECT] = addr;
+    }
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+
+    int idx = bn / NINDIRECT;
+
+    for(int i = 0; i < idx; i++) {
+      if((addr = a[i] == 0)) {
+        addr = balloc(ip->dev);
+        a[i] = addr;
+      }
+    }
+
+    brelse(bp);
+    bn -= NINDIRECT * idx;
+    bp = bread(ip->dev, addr);
+    a = (uint *)bp->data;
+    
+    if((addr = a[bn]) == 0){
+      addr = balloc(ip->dev);
+      if(addr){
+        a[bn] = addr;
+        log_write(bp);
+      }
+    }
+    brelse(bp);
+    return addr;
+  }
+
+
+  if(bn < MAXFILE){
+    bn -= (MAXFILE - NINDIRECT);
+    // Load indirect block, allocating if necessary.
+    if((addr = ip->addrs[DINDIRECT]) == 0){
+      addr = balloc(ip->dev);
+      if(addr == 0)
+        return 0;
+      ip->addrs[DINDIRECT] = addr;
     }
     bp = bread(ip->dev, addr);
     a = (uint*)bp->data;
@@ -416,6 +454,8 @@ bmap(struct inode *ip, uint bn)
     brelse(bp);
     return addr;
   }
+
+
 
   panic("bmap: out of range");
 }
